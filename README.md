@@ -1,6 +1,6 @@
 # API Connector
 
-`api_connector` est une bibliothèque Python conçue pour faciliter la connexion à un service web API. Elle utilise `aiohttp` pour gérer les requêtes HTTP de manière asynchrone, ce qui la rend idéale pour les applications nécessitant des performances élevées et une gestion efficace des connexions simultanées.
+`api_client` est une bibliothèque Python conçue pour faciliter la connexion à un service web API. Elle utilise `aiohttp` pour gérer les requêtes HTTP de manière asynchrone, ce qui la rend idéale pour les applications nécessitant des performances élevées et une gestion efficace des connexions simultanées.
 
 ## Fonctionnalités
 
@@ -11,28 +11,29 @@
 
 ## Installation
 
-Pour installer `api_connector`, utilisez pip :
+Pour installer `api_client`, utilisez pip :
 
 ```bash
-pip install api_connector
+pip install api_client
 ```
 
 ## Utilisation
 
-Voici un exemple de base pour utiliser `api_connector` dans votre projet :
+Voici un exemple de base pour utiliser `api_client` dans votre projet :
 
 ```python
 import asyncio
-from api_connector import APIConnector
+
 
 async def main():
     # Initialisez le connecteur avec l'URL de base de votre API
-    connector = APIConnector(base_url="https://api.example.com")
+    client = APIClient(base_url="https://api.example.com")
 
     # Effectuez une requête GET asynchrone
-    response = await connector.get("/endpoint")
+    response = await client.login(username="", password="")
     data = await response.json()
     print(data)
+
 
 # Exécutez la fonction principale
 asyncio.run(main())
@@ -47,7 +48,7 @@ Vous pouvez configurer `APIConnector` avec différentes options :
 - `timeout` : Délai d'attente pour les requêtes.
 
 ```python
-connector = APIConnector(
+client = APIClient(
     base_url="https://api.example.com",
     headers={"Authorization": "Bearer YOUR_TOKEN"},
     timeout=10
