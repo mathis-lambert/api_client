@@ -1,0 +1,45 @@
+from typing import Optional
+
+
+class AuthEndpoint:
+    def __init__(self, client):
+        self.client = client
+
+    async def login(self, username: str, password: str, expires_in: int = 30):
+        url = f"{self.client.base_url}/auth/token"
+        data = {"username": username, "password": password, "expires_in": expires_in}
+        response = await self.client._request("POST", url, data=data)
+        # Stocker le jeton d'authentification dans l'instance de APIClient
+        self.client.auth_token = response["access_token"]
+        return response
+
+    async def generate_api_key(
+        self,
+        username: str,
+        password: str,
+        expires_in: Optional[int] = None,
+        raise_on_error: bool = True,
+    ):
+        # Vérifier si l'utilisateur est authentifié
+        if not self.client.auth_token:
+            if raise_on_error:
+                raise PermissionError("User must be logged in to generate an API key.")
+            else:
+                await self.client.auth.login(username, password, 1)
+
+        url = f"{self.client.base_url}/auth/api-key"
+        data = {"expires_in": expires_in}
+        return await self.client._request("POST", url, json=data)
+
+    async def list_api_keys(self):
+        url = f"{self.client.base_url}/auth/api-keys"
+        return await self.client._request("GET", url)
+
+    async def register(self, username: str, email: str, password: str):
+        url = f"{self.client.base_url}/auth/register"
+        data = {"username": username, "email": email, "password": password}
+        return await self.client._request("POST", url, json=data)
+
+    async def verify_token(self):
+        url = f"{self.client.base_url}/auth/verify"
+        return await self.client._request("GET", url)

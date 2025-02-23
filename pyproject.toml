@@ -1,26 +1,14 @@
-[build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "api_client"
+name = "ml_api_client"
 version = "0.1.0"
 description = "A Python client for interacting with Mathis LAMBERT's API"
-readme = "README.md"
 requires-python = ">=3.13"
-keywords = ["api", "client", "mathis lambert"]
-license = { text = "MIT" }
 authors = [
     { name = "Mathis LAMBERT", email = "mathislambert.dev@gmail.com" }
 ]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
 dependencies = [
     "aiohttp>=3.11.12",
-    "pydantic>=2.10.6",
+    "pydantic>=2.10.6"
 ]
 
 [project.optional-dependencies]
@@ -29,14 +17,76 @@ dev = [
     "pytest-asyncio",
     "black",
     "isort",
+    "ruff",
+    "flake8",
+    "python-dotenv"
 ]
 
-[project.urls]
-"Homepage" = "https://github.com/mathis-lambert/api_client"
-"Bug Tracker" = "https://github.com/mathis-lambert/api_client/issues"
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
 
-[tool.setuptools]
-packages = ["api_client"]
 
-[tool.setuptools.package-data]
-"api_client" = ["py.typed"]
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 88
+target-version = ['py313']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503"]
+exclude = [
+    ".git",
+    "__pycache__",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "build",
+    "dist"
+]
+
+[tool.ruff]
+line-length = 88
+select = ["A", "B", "C", "E", "F", "I", "N", "Q", "T", "W"]
+ignore = ["A002", "A003", "B008", "E203", "E501", "N801"]
+exclude = [
+    ".git",
+    "__pycache__",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "build",
+    "dist"
+]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+ignore_missing_imports = true
+strict = true
+
