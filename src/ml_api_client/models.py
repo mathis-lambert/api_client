@@ -156,6 +156,3 @@ class RagRetrieveResponse(BaseModel):
 class RetrieveResult(BaseModel):
     score: float
     payload: Dict[str, Any]
-
-
-# Ajoutez d'autres modèles de données ici si nécessaire...

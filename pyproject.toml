@@ -13,6 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "fastapi[standard]>=0.115.8",
     "pytest",
     "pytest-asyncio",
     "black",

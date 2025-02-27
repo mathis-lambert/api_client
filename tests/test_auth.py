@@ -17,6 +17,3 @@ async def test_generate_api_key(api_client, env_variables):
         raise_on_error=False,
     )
     assert "api_key" in response
-
-
-# Ajoutez d'autres tests pour les méthodes d'authentification...

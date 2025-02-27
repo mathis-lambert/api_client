@@ -15,6 +15,3 @@ async def test_retrieve(api_client, env_variables):
     request = RagRetrieveRequest(query="Hello, world!")
     response = await api_client.rag.retrieve("test", request)
     assert "results" in response
-
-
-# Ajoutez d'autres tests pour les méthodes RAG...
