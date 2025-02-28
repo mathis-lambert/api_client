@@ -17,3 +17,6 @@ async def test_generate_api_key(api_client, env_variables):
         raise_on_error=False,
     )
     assert "api_key" in response
+    assert "expires_at" in response
+
+    await api_client.auth.delete_api_key(response["api_key_id"])

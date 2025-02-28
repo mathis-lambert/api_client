@@ -21,6 +21,10 @@ def env_variables():
 
 @pytest_asyncio.fixture
 async def api_client(env_variables):
-    client = APIClient(api_key=env_variables["API_KEY"])
+    client = APIClient(
+        api_key=env_variables["API_KEY"],
+        username=env_variables["USERNAME"],
+        password=env_variables["PASSWORD"],
+    )
     yield client
     await client.close()

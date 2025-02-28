@@ -65,7 +65,7 @@ exclude = [
 [tool.ruff]
 line-length = 88
 select = ["A", "B", "C", "E", "F", "I", "N", "Q", "T", "W"]
-ignore = ["A002", "A003", "B008", "E203", "E501", "N801"]
+ignore = ["A002", "A003", "B008", "E203", "E501", "N801", "C901", "B904"]
 exclude = [
     ".git",
     "__pycache__",

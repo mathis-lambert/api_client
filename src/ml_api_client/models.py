@@ -27,6 +27,12 @@ class ApiKeyEntry(BaseModel):
     expires_at: Optional[datetime] = None
 
 
+class CreateApiKeyResponse(BaseModel):
+    api_key: str
+    api_key_id: str
+    expires_at: str | None
+
+
 class BaseModelCard(BaseModel):
     id: str
     capabilities: "ModelCapabilities"
