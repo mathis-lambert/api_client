@@ -166,3 +166,69 @@ class ChatEndpoint:
                 yield chunk["chunk"]
             elif "result" in chunk:
                 yield chunk["result"]
+
+    async def stream_sse(
+        self, request: ChatCompletionsRequest
+    ) -> AsyncGenerator[str, None]:
+        """
+        Renvoie les chunks SSE bruts sous forme de chaînes pour retransmission.
+        """
+        request.stream = True
+        url = f"{self.client.base_url}/chat/completions"
+
+        # Initialise la session si nécessaire
+        if self.client.session is None or self.client.session.closed:
+            self.client.session = aiohttp.ClientSession(timeout=self.client.timeout)
+
+        attempts = 0
+        while attempts <= self.max_stream_retries:
+            try:
+                headers = await self._prepare_headers()
+                async with self.client.session.post(
+                    url,
+                    headers=headers,
+                    json=request.model_dump(),
+                    timeout=self.client.timeout,
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.content:
+                        yield line.decode(
+                            "utf-8"
+                        )  # Renvoie chaque ligne du flux SSE brute
+                return
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                attempts += 1
+                if attempts > self.max_stream_retries:
+                    raise ConnectionError(
+                        f"Nombre maximal de tentatives ({self.max_stream_retries}) dépassé : {str(e)}"
+                    )
+
+                # Gestion des erreurs d’authentification
+                if isinstance(e, aiohttp.ClientResponseError) and e.status == 401:
+                    if self.client.username and self.client.password:
+                        try:
+                            self.client.logger.info(
+                                "Token expiré, rafraîchissement en cours..."
+                            )
+                            await self.client.auth.login(
+                                username=self.client.username,
+                                password=self.client.password,
+                                expires_in=1,
+                            )
+                            continue
+                        except Exception as auth_error:
+                            self.client.logger.error(
+                                f"Échec du rafraîchissement : {auth_error}"
+                            )
+
+                # Calcul du délai avec jitter
+                delay = self.retry_delay_base * (2 ** (attempts - 1))
+                jitter = delay * 0.1 * random.random()
+                total_delay = delay + jitter
+
+                self.client.logger.warning(
+                    f"Erreur de connexion, nouvelle tentative dans {total_delay:.2f}s "
+                    f"(tentative {attempts}/{self.max_stream_retries}) : {str(e)}"
+                )
+                await asyncio.sleep(total_delay)
