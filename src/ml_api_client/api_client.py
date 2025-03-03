@@ -58,88 +58,83 @@ class APIClient:
         self.logger = logger
 
     async def close(self) -> None:
-        """Close the client session if it exists."""
+        """Ferme la session cliente si elle existe."""
         if self.session and not self.session.closed:
             await self.session.close()
             self.session = None
 
+    async def _prepare_headers(self) -> Dict[str, str]:
+        """Prépare les en-têtes pour la requête, avec authentification si disponible."""
+        headers = {}
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        elif self.api_key:
+            headers["X-ML-API-Key"] = self.api_key
+        return headers
+
     async def _request(
         self, method: str, url: str, retry: bool = True, **kwargs
     ) -> Dict[str, Any]:
-        """Make an HTTP request with automatic authentication retry if needed."""
+        """Effectue une requête HTTP avec retry automatique en cas d'échec d'authentification."""
         if not self.session or self.session.closed:
             self.session = aiohttp.ClientSession(timeout=self.timeout)
 
-        headers = kwargs.pop("headers", {})
+        headers = await self._prepare_headers()
+        headers.update(kwargs.pop("headers", {}))
 
-        if self.api_key and not self.auth_token:
-            headers["X-ML-API-Key"] = self.api_key
-        if self.auth_token:
-            headers["Authorization"] = f"Bearer {self.auth_token}"
-
-        logger.info(f"Headers: {headers}")
         try:
             async with self.session.request(
                 method, url, headers=headers, **kwargs
             ) as response:
-                logger.debug(f"Request URL: {url}")
                 response.raise_for_status()
                 result = await response.json()
-                # Réinitialisation du compteur après un appel réussi
+                # Réinitialisation du compteur après une requête réussie
                 self.retry_count = 0
                 return result
 
         except aiohttp.ClientResponseError as e:
-            logger.error(f"HTTP error: {e.status} - {e.message}")
-            if e.status == 401 and retry:
-                if self.retry_count < self.max_retries:
-                    self.retry_count += 1
-                    self.auth_token = None
-                    self.api_key = None
-
-                    logger.info(
-                        f"Token expired, re-authenticating (attempt {self.retry_count}/{self.max_retries})..."
+            if e.status == 401 and retry and self.retry_count < self.max_retries:
+                self.retry_count += 1
+                self.auth_token = None
+                self.logger.info(
+                    f"Token expiré, nouvelle tentative d'authentification ({self.retry_count}/{self.max_retries})..."
+                )
+                await asyncio.sleep(self.retry_delay * self.retry_count)
+                if self.username and self.password:
+                    await self.auth.login(
+                        username=self.username, password=self.password, expires_in=1
                     )
-                    await asyncio.sleep(self.retry_delay * self.retry_count)
-                    if self.username and self.password:
-                        await self.auth.login(
-                            username=self.username, password=self.password, expires_in=1
-                        )
-                        return await self._request(method, url, retry=True, **kwargs)
-                    else:
-                        raise PermissionError(
-                            "Invalid API key or authentication token."
-                        )
+                    return await self._request(method, url, retry=True, **kwargs)
                 else:
-                    raise ConnectionError(
-                        f"Maximum retry attempts ({self.max_retries}) exceeded for authentication."
+                    raise PermissionError(
+                        "Clé API ou token d'authentification invalide."
                     )
             elif e.status == 403:
-                raise PermissionError(f"Access forbidden: {e.message}")
+                raise PermissionError(f"Accès interdit : {e.message}")
             elif e.status == 404:
-                raise ValueError(f"Resource not found: {e.message}", 404)
+                raise ValueError(f"Ressource introuvable : {e.message}")
             else:
                 raise APIError(
-                    f"HTTP error: {e.status} - {e.message}", status_code=e.status
+                    f"Erreur HTTP : {e.status} - {e.message}", status_code=e.status
                 )
         except aiohttp.ClientConnectionError as e:
-            raise ConnectionError(f"Connection error: {str(e)}")
+            raise ConnectionError(f"Erreur de connexion : {str(e)}")
         except asyncio.TimeoutError:
-            raise TimeoutError(f"Request timed out: {url}")
+            raise TimeoutError(f"Délai dépassé pour la requête : {url}")
 
     async def __aenter__(self):
-        """Initialize the session when entering async context."""
+        """Initialise la session lors de l'entrée dans le contexte asynchrone."""
         if not self.session or self.session.closed:
             self.session = aiohttp.ClientSession(timeout=self.timeout)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Ensure resources are properly cleaned up."""
+        """Assure le nettoyage des ressources."""
         await self.close()
 
 
 class APIError(Exception):
-    """Custom exception for API errors."""
+    """Exception personnalisée pour les erreurs d'API."""
 
     def __init__(self, message: str, status_code: Optional[int] = None):
         self.status_code = status_code
