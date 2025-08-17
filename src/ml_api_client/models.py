@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
+from openai.types.chat import ChatCompletionMessageParam
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 # ---------------
@@ -56,88 +57,12 @@ class HTTPValidationError(BaseModel):
 # ---------------
 
 
-class ToolCallFunction(BaseModel):
-    name: str
-    arguments: str
-
-
-class ToolCall(BaseModel):
-    id: str
-    type: str
-    function: ToolCallFunction
-
-
-class ChatMessage(BaseModel):
-    role: str
-    content: Optional[str] = None
-    tool_calls: Optional[List[ToolCall]] = None
-    refusal: Optional[str] = None
-    annotations: List[Dict[str, Any]] = Field(default_factory=list)
-    reasoning_content: Optional[str] = None
-
-
-class Message(BaseModel):
-    role: str
-    content: str
-
-
-class TokenDetails(BaseModel):
-    cached_tokens: int = 0
-    audio_tokens: int = 0
-
-
-class CompletionTokenDetails(BaseModel):
-    reasoning_tokens: int = 0
-    audio_tokens: int = 0
-    accepted_prediction_tokens: int = 0
-    rejected_prediction_tokens: int = 0
-
-
-class ChatUsage(BaseModel):
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-    prompt_tokens_details: TokenDetails = Field(
-        default_factory=lambda: TokenDetails(cached_tokens=0, audio_tokens=0)
-    )
-    completion_tokens_details: CompletionTokenDetails = Field(
-        default_factory=lambda: CompletionTokenDetails(
-            reasoning_tokens=0,
-            audio_tokens=0,
-            accepted_prediction_tokens=0,
-            rejected_prediction_tokens=0,
-        )
-    )
-
-
-class ChatCompletionChoice(BaseModel):
-    index: int
-    message: ChatMessage
-    logprobs: Optional[Dict[str, Any]] = None
-    finish_reason: Optional[str] = None
-
-
-class ChatCompletionResponse(BaseModel):
-    id: str
-    object: str = "chat.completion"
-    created: int
+class TextGenerationRequest(BaseModel):
     model: str
-    choices: List[ChatCompletionChoice]
-    usage: ChatUsage
-    service_tier: str = "default"
-    system_fingerprint: Optional[str] = None
+    messages: Iterable[ChatCompletionMessageParam]
+    stream: Optional[bool] = None
 
-
-class ChatCompletionsRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
-    model: str
-    messages: Optional[List[Message]] = None
-    prompt: Optional[str] = None
-    input: Optional[str] = None
-    history: Optional[List[Message]] = None
-    stream: bool = False
-    tools: Optional[List[Dict[str, Any]]] = None
-    tool_choice: Optional[Any] = None
 
 
 # ---------------

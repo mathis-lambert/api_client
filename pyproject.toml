@@ -23,7 +23,8 @@ classifiers = [
 ]
 dependencies = [
     "aiohttp>=3.11.12",
-    "pydantic>=2.10.6"
+    "pydantic>=2.10.6",
+    "openai"
 ]
 
 [project.urls]

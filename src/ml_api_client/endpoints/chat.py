@@ -2,239 +2,218 @@ import asyncio
 import json
 import random
 import warnings
-from typing import Any, AsyncGenerator, Dict
+from typing import Any, AsyncGenerator, Dict, Iterable, Optional
 
-import aiohttp
+from openai import AsyncOpenAI
+from openai import APIConnectionError, RateLimitError
+from openai._exceptions import APIStatusError  # status_code available
+from openai.types.chat import ChatCompletion, ChatCompletionMessageParam
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 
-from ..models import ChatCompletionsRequest
+from ..models import TextGenerationRequest
 
 
 class ChatEndpoint:
     def __init__(self, client):
         self.client = client
         self.max_stream_retries = 3
-        self.retry_delay_base = 1.0  # Base delay in seconds
+        self.retry_delay_base = 1.0
+        self._sdk: Optional[AsyncOpenAI] = None
 
-    async def get_completions(self, request: ChatCompletionsRequest) -> Dict[str, Any]:
-        """
-        Récupère les complétions de chat via l'endpoint non-streaming.
-        Retourne un objet conforme à ChatCompletionResponse (OpenAI-like).
-        """
-        url = f"{self.client.base_url}/chat/completions"
+    # --------------------------
+    # SDK bootstrap
+    # --------------------------
+    def _ensure_sdk(self) -> AsyncOpenAI:
+        if self._sdk:
+            return self._sdk
 
-        if request.stream:
+        timeout_s = getattr(self.client.timeout, "total", None)
+        default_headers: Dict[str, str] = {}
+
+        api_key_for_sdk = self.client.auth_token or (self.client.api_key or "none")
+        if self.client.api_key:
+            default_headers["X-ML-API-Key"] = self.client.api_key
+
+        self._sdk = AsyncOpenAI(
+            base_url=self.client.base_url,
+            api_key=api_key_for_sdk,
+            max_retries=self.client.max_retries,
+            timeout=timeout_s if timeout_s is not None else 60,
+            default_headers=default_headers or None,
+        )
+        return self._sdk
+
+    # --------------------------
+    # Non-streaming
+    # --------------------------
+    async def complete(
+        self,
+        model: str,
+        messages: Iterable[ChatCompletionMessageParam],
+        stream: Optional[bool] = None,
+        **kwargs: Any,
+    ) -> ChatCompletion:
+        """
+        Non-streaming chat completion. Returns OpenAI-like ChatCompletion.
+        """
+        if stream:
             warnings.warn(
-                "streaming est à True, mais vous utilisez l endpoint non-streaming.",
+                "stream=True on non-streaming call. For streaming use stream/stream_text.",
                 stacklevel=2,
             )
 
-        request.stream = False
-        return await self.client._request("POST", url, json=request.model_dump())
+        payload = {"model": model, "messages": messages, "stream": stream, **kwargs}
 
-    async def _prepare_headers(self) -> Dict[str, str]:
-        """Prépare les en-têtes HTTP pour la requête SSE."""
-        headers = {
-            "Accept": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-        }
-        if self.client.api_key:
-            headers["X-ML-API-Key"] = self.client.api_key
-        if self.client.auth_token:
-            headers["Authorization"] = f"Bearer {self.client.auth_token}"
-        return headers
-
-    async def _parse_sse_event(
-        self, event_type: str, data_lines: list[str]
-    ) -> Dict[str, Any]:
-        """Parse un événement SSE à partir de son type et de ses lignes de données."""
-        data = "\n".join(data_lines)
+        sdk = self._ensure_sdk()
         try:
-            parsed_data = json.loads(data)
-            if event_type == "done":
-                return parsed_data
-            elif event_type == "error":
-                raise RuntimeError(parsed_data.get("error", "Erreur SSE inconnue"))
-            return parsed_data
-        except json.JSONDecodeError:
-            self.client.logger.warning(f"Échec du parsing des données SSE : {data}")
-            return {}
+            # OpenAI SDK accepts typed kwargs (model, messages, ...).
+            # Ensure your TextGenerationRequest fields match OpenAI params.
+            return await sdk.chat.completions.create(**payload)  # type: ignore[arg-type]
+        except APIStatusError as e:
+            await self._maybe_refresh_and_raise(e)
+        except (APIConnectionError, RateLimitError) as e:
+            raise ConnectionError(str(e))
 
-    async def _process_sse_stream(
-        self, response: aiohttp.ClientResponse
-    ) -> AsyncGenerator[dict, None]:
-        """Traite le flux SSE ligne par ligne et génère les événements parsés."""
-        event_type = "message"  # Type par défaut
-        data_lines = []
+        # Satisfy type checker. _maybe_refresh_and_raise always raises.
+        raise RuntimeError("Unreachable")
 
-        async for line in response.content:
-            line = line.decode("utf-8").strip()
-
-            if line:
-                if line.startswith("event:"):
-                    event_type = line[6:].strip()
-                elif line.startswith("data:"):
-                    data_lines.append(line[5:].strip())
-            else:
-                # Une ligne vide marque la fin d’un événement
-                if data_lines:
-                    event = await self._parse_sse_event(event_type, data_lines)
-                    yield event
-                    if event_type == "done":
-                        return
-                    event_type = "message"
-                    data_lines = []
-
-    async def get_streaming_completions(
-        self, request: ChatCompletionsRequest
-    ) -> AsyncGenerator[dict, None]:
+    # --------------------------
+    # Streaming helpers
+    # --------------------------
+    async def _stream_with_retries(
+        self, model: str, messages: Iterable[ChatCompletionMessageParam], **kwargs: Any
+    ) -> AsyncGenerator[ChatCompletionChunk, None]:
         """
-        Récupère les complétions de chat en streaming (SSE).
-        Chaque événement est un JSON de type chat.completion.chunk contenant choices[].delta.
+        Centralized streaming with retry and token refresh.
+        Yields ChatCompletionChunk from OpenAI SDK.
         """
-        request.stream = True
-        url = f"{self.client.base_url}/chat/completions"
-
-        # Initialise la session si nécessaire
-        if self.client.session is None or self.client.session.closed:
-            self.client.session = aiohttp.ClientSession(timeout=self.client.timeout)
-
         attempts = 0
+        sdk = self._ensure_sdk()
+
         while attempts <= self.max_stream_retries:
             try:
-                headers = await self._prepare_headers()
-                async with self.client.session.post(
-                    url,
-                    headers=headers,
-                    json=request.model_dump(),
-                    timeout=self.client.timeout,
-                ) as response:
-                    response.raise_for_status()
-                    async for event in self._process_sse_stream(response):
-                        yield event
+                # Newer SDKs return an async iterator when stream=True.
+                stream = await sdk.chat.completions.create(
+                    model=model, messages=messages, stream=True, **kwargs
+                )  # type: ignore[arg-type]
+                async for chunk in stream:
+                    yield chunk
                 return
 
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            except APIStatusError as e:
+                # 401: try refresh if creds available, then retry.
+                if (
+                    e.status_code == 401
+                    and self.client.username
+                    and self.client.password
+                ):
+                    attempts += 1
+                    if attempts > self.max_stream_retries:
+                        raise PermissionError(
+                            "Unauthorized and refresh retries exhausted."
+                        )
+                    try:
+                        self.client.logger.info("Token expired, refreshing...")
+                        await self.client.auth.login(
+                            username=self.client.username,
+                            password=self.client.password,
+                            expires_in=1,
+                        )
+                        # Rebuild SDK with fresh token
+                        self._sdk = None
+                        sdk = self._ensure_sdk()
+                        continue
+                    except Exception as auth_error:
+                        self.client.logger.error(f"Refresh failed: {auth_error}")
+                        raise PermissionError("Token refresh failed.") from auth_error
+                else:
+                    raise
+
+            except (APIConnectionError, RateLimitError, asyncio.TimeoutError) as e:
                 attempts += 1
                 if attempts > self.max_stream_retries:
                     raise ConnectionError(
-                        f"Nombre maximal de tentatives ({self.max_stream_retries}) dépassé : {str(e)}"
+                        f"Maximum number of attempts ({self.max_stream_retries}) exceeded: {str(e)}"
                     )
-
-                # Gestion des erreurs d’authentification
-                if isinstance(e, aiohttp.ClientResponseError) and e.status == 401:
-                    if self.client.username and self.client.password:
-                        try:
-                            self.client.logger.info(
-                                "Token expiré, rafraîchissement en cours..."
-                            )
-                            await self.client.auth.login(
-                                username=self.client.username,
-                                password=self.client.password,
-                                expires_in=1,
-                            )
-                            continue
-                        except Exception as auth_error:
-                            self.client.logger.error(
-                                f"Échec du rafraîchissement : {auth_error}"
-                            )
-
-                # Calcul du délai avec jitter
                 delay = self.retry_delay_base * (2 ** (attempts - 1))
                 jitter = delay * 0.1 * random.random()
                 total_delay = delay + jitter
-
                 self.client.logger.warning(
-                    f"Erreur de connexion, nouvelle tentative dans {total_delay:.2f}s "
-                    f"(tentative {attempts}/{self.max_stream_retries}) : {str(e)}"
+                    f"Connection error, retrying in {total_delay:.2f}s "
+                    f"(attempt {attempts}/{self.max_stream_retries}): {str(e)}"
                 )
                 await asyncio.sleep(total_delay)
 
+    async def _maybe_refresh_and_raise(self, e: APIStatusError) -> None:
+        if e.status_code == 401 and self.client.username and self.client.password:
+            try:
+                self.client.logger.info("Token expired, refreshing...")
+                await self.client.auth.login(
+                    username=self.client.username,
+                    password=self.client.password,
+                    expires_in=1,
+                )
+                # Successful refresh, let caller retry explicitly if needed.
+                raise PermissionError("Token was expired. Please retry the request.")
+            except Exception as auth_error:
+                self.client.logger.error(f"Refresh failed: {auth_error}")
+                raise PermissionError("Token refresh failed.") from auth_error
+        # Map common statuses to your previous errors
+        if e.status_code == 403:
+            raise PermissionError(f"Access forbidden: {e}")
+        if e.status_code == 404:
+            raise ValueError(f"Resource not found: {e}")
+        raise
+
+    # --------------------------
+    # Streaming: OpenAI chunks
+    # --------------------------
+    async def stream(
+        self, model: str, messages: Iterable[ChatCompletionMessageParam], **kwargs: Any
+    ) -> AsyncGenerator[ChatCompletionChunk, None]:
+        """
+        Streaming chat completions. Yields dicts like ChatCompletionChunk.
+        """
+
+        async for chunk in self._stream_with_retries(model, messages, **kwargs):
+            yield chunk
+
+    # --------------------------
+    # Streaming: text only
+    # --------------------------
     async def stream_text(
-        self, request: ChatCompletionsRequest
+        self, model: str, messages: Iterable[ChatCompletionMessageParam], **kwargs: Any
     ) -> AsyncGenerator[str, None]:
         """
-        Diffuse uniquement le texte des chunks SSE (choices[].delta.content) au fur et à mesure.
+        Yields choices[0].delta.content as text tokens arrive.
         """
-        request.stream = True
-        async for event in self.get_streaming_completions(request):
+        async for event in self._stream_with_retries(model, messages, **kwargs):
             try:
                 if (
-                    isinstance(event, dict)
-                    and event.get("object") == "chat.completion.chunk"
+                    isinstance(event, ChatCompletionChunk)
+                    and event.object == "chat.completion.chunk"
                 ):
-                    choices = event.get("choices") or []
+                    choices = event.choices or []
                     if choices:
-                        delta = choices[0].get("delta") or {}
-                        content = delta.get("content")
+                        delta = choices[0].delta or {}
+                        content = delta.content
                         if content is not None:
                             yield content
             except Exception:
-                # Ignore malformed events
                 continue
 
+    # --------------------------
+    # Streaming: raw SSE lines
+    # --------------------------
     async def stream_sse(
-        self, request: ChatCompletionsRequest
+        self, model: str, messages: Iterable[ChatCompletionMessageParam], **kwargs: Any
     ) -> AsyncGenerator[str, None]:
         """
-        Renvoie les chunks SSE bruts sous forme de chaînes pour retransmission.
+        Emits raw SSE-like lines built from SDK chunks.
+        Matches "data: {json}\\n\\n" then final "data: [DONE]\\n\\n".
         """
-        request.stream = True
-        url = f"{self.client.base_url}/chat/completions"
-
-        # Initialise la session si nécessaire
-        if self.client.session is None or self.client.session.closed:
-            self.client.session = aiohttp.ClientSession(timeout=self.client.timeout)
-
-        attempts = 0
-        while attempts <= self.max_stream_retries:
-            try:
-                headers = await self._prepare_headers()
-                async with self.client.session.post(
-                    url,
-                    headers=headers,
-                    json=request.model_dump(),
-                    timeout=self.client.timeout,
-                ) as response:
-                    response.raise_for_status()
-                    async for line in response.content:
-                        yield line.decode(
-                            "utf-8"
-                        )  # Renvoie chaque ligne du flux SSE brute
-                return
-
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                attempts += 1
-                if attempts > self.max_stream_retries:
-                    raise ConnectionError(
-                        f"Nombre maximal de tentatives ({self.max_stream_retries}) dépassé : {str(e)}"
-                    )
-
-                # Gestion des erreurs d’authentification
-                if isinstance(e, aiohttp.ClientResponseError) and e.status == 401:
-                    if self.client.username and self.client.password:
-                        try:
-                            self.client.logger.info(
-                                "Token expiré, rafraîchissement en cours..."
-                            )
-                            await self.client.auth.login(
-                                username=self.client.username,
-                                password=self.client.password,
-                                expires_in=1,
-                            )
-                            continue
-                        except Exception as auth_error:
-                            self.client.logger.error(
-                                f"Échec du rafraîchissement : {auth_error}"
-                            )
-
-                # Calcul du délai avec jitter
-                delay = self.retry_delay_base * (2 ** (attempts - 1))
-                jitter = delay * 0.1 * random.random()
-                total_delay = delay + jitter
-
-                self.client.logger.warning(
-                    f"Erreur de connexion, nouvelle tentative dans {total_delay:.2f}s "
-                    f"(tentative {attempts}/{self.max_stream_retries}) : {str(e)}"
-                )
-                await asyncio.sleep(total_delay)
+        async for chunk in self._stream_with_retries(model, messages, **kwargs):
+            line = f"data: {json.dumps(chunk.model_dump(), separators=(',', ':'))}\n\n"
+            yield line
+        # Signal logical end
+        yield "data: [DONE]\n\n"
