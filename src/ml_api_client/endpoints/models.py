@@ -6,6 +6,6 @@ class ModelsEndpoint:
         url = f"{self.client.base_url}/models/"
         return await self.client._request("GET", url)
 
-    async def retrieve_model(self, model_id: str):
-        url = f"{self.client.base_url}/models/{model_id}"
+    async def retrieve_model(self, provider: str, model_id: str):
+        url = f"{self.client.base_url}/models/{provider}/{model_id}"
         return await self.client._request("GET", url)

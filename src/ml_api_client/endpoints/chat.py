@@ -17,7 +17,8 @@ class ChatEndpoint:
 
     async def get_completions(self, request: ChatCompletionsRequest) -> Dict[str, Any]:
         """
-        Récupère les complétions de chat via l endpoint non-streaming.
+        Récupère les complétions de chat via l'endpoint non-streaming.
+        Retourne un objet conforme à ChatCompletionResponse (OpenAI-like).
         """
         url = f"{self.client.base_url}/chat/completions"
 
@@ -88,13 +89,8 @@ class ChatEndpoint:
         self, request: ChatCompletionsRequest
     ) -> AsyncGenerator[dict, None]:
         """
-        Récupère les complétions de chat en streaming au format SSE.
-        Génère des dictionnaires parsés à partir des événements SSE.
-
-        Retourne:
-            AsyncGenerator produisant des dictionnaires avec la structure suivante :
-            - Pour les chunks normaux : {"chunk": str, "finish_reason": str|None, "job_id": str}
-            - Pour la complétion finale : {"result": str, "finish_reason": str, "job_id": str}
+        Récupère les complétions de chat en streaming (SSE).
+        Chaque événement est un JSON de type chat.completion.chunk contenant choices[].delta.
         """
         request.stream = True
         url = f"{self.client.base_url}/chat/completions"
@@ -158,14 +154,24 @@ class ChatEndpoint:
         self, request: ChatCompletionsRequest
     ) -> AsyncGenerator[str, None]:
         """
-        Diffuse le contenu textuel des complétions de chat au fur et à mesure de leur arrivée.
+        Diffuse uniquement le texte des chunks SSE (choices[].delta.content) au fur et à mesure.
         """
         request.stream = True
-        async for chunk in self.get_streaming_completions(request):
-            if "chunk" in chunk:
-                yield chunk["chunk"]
-            elif "result" in chunk:
-                yield chunk["result"]
+        async for event in self.get_streaming_completions(request):
+            try:
+                if (
+                    isinstance(event, dict)
+                    and event.get("object") == "chat.completion.chunk"
+                ):
+                    choices = event.get("choices") or []
+                    if choices:
+                        delta = choices[0].get("delta") or {}
+                        content = delta.get("content")
+                        if content is not None:
+                            yield content
+            except Exception:
+                # Ignore malformed events
+                continue
 
     async def stream_sse(
         self, request: ChatCompletionsRequest

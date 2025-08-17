@@ -1,6 +1,6 @@
 from typing import Optional
 
-from ..models import CreateApiKeyResponse
+from ..models import DeleteApiKeyResponse, GetApiKeyResponse
 
 
 class AuthEndpoint:
@@ -27,6 +27,7 @@ class AuthEndpoint:
             username = self.client.username
             password = self.client.password
 
+        # OAuth2 password flow uses form-encoded body
         data = {"username": username, "password": password, "expires_in": expires_in}
         response = await self.client._request("POST", url, data=data)
         # Stocker le jeton d'authentification dans l'instance de APIClient
@@ -39,7 +40,7 @@ class AuthEndpoint:
         password: str = None,
         expires_in: Optional[int] = None,
         raise_on_error: bool = True,
-    ) -> CreateApiKeyResponse:
+    ) -> GetApiKeyResponse:
         # Vérifier si l'utilisateur est authentifié
         if not self.client.auth_token:
             if raise_on_error:
@@ -62,11 +63,12 @@ class AuthEndpoint:
         url = f"{self.client.base_url}/auth/api-keys"
         return await self.client._request("GET", url)
 
-    async def delete_api_key(self, api_key_id: str):
+    async def delete_api_key(self, api_key_id: str) -> DeleteApiKeyResponse | dict:
         url = f"{self.client.base_url}/auth/api-key/{api_key_id}"
         return await self.client._request("DELETE", url)
 
     async def register(self, username: str, email: str, password: str):
+        # Registration endpoint not present in new OpenAPI; keeping method for compatibility
         url = f"{self.client.base_url}/auth/register"
         data = {"username": username, "email": email, "password": password}
         return await self.client._request("POST", url, json=data)

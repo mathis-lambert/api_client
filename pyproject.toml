@@ -1,15 +1,35 @@
 [project]
 name = "ml_api_client"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Python client for interacting with Mathis LAMBERT's API"
 requires-python = ">=3.13"
 authors = [
     { name = "Mathis LAMBERT", email = "mathislambert.dev@gmail.com" }
 ]
+readme = { file = "README.md", content-type = "text/markdown" }
+license = { file = "LICENSE" }
+keywords = ["api", "client", "llm", "chat", "embeddings", "vector", "openai-compatible"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
+  "Typing :: Typed",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "aiohttp>=3.11.12",
     "pydantic>=2.10.6"
 ]
+
+[project.urls]
+Homepage = "https://github.com/mathis-lambert/ml_api_client"
+Repository = "https://github.com/mathis-lambert/ml_api_client"
+Issues = "https://github.com/mathis-lambert/ml_api_client/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -20,7 +40,9 @@ dev = [
     "isort",
     "ruff",
     "flake8",
-    "python-dotenv"
+    "python-dotenv",
+    "build",
+    "twine"
 ]
 
 [tool.pytest.ini_options]
@@ -30,6 +52,17 @@ asyncio_default_fixture_loop_scope = "function"
 [build-system]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ml_api_client*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+ml_api_client = ["py.typed"]
 
 [tool.black]
 line-length = 88

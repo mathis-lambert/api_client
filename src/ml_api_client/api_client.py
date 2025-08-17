@@ -10,8 +10,7 @@ from .endpoints import (
     ChatEndpoint,
     EmbeddingsEndpoint,
     ModelsEndpoint,
-    RAGEndpoint,
-    VectorDBEndpoint,
+    VectorStoresEndpoint,
 )
 
 # Configure logging once with all settings
@@ -51,9 +50,8 @@ class APIClient:
         self.auth = AuthEndpoint(self)
         self.chat = ChatEndpoint(self)
         self.models = ModelsEndpoint(self)
-        self.vector_db = VectorDBEndpoint(self)
+        self.vector_stores = VectorStoresEndpoint(self)
         self.embeddings = EmbeddingsEndpoint(self)
-        self.rag = RAGEndpoint(self)
 
         self.logger = logger
 

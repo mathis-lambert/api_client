@@ -1,23 +1,23 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
-
-
-class ChatCompletionsRequest(BaseModel):
-    model: str = "mistral-small-latest"
-    input: str = "Hello, how are you?"
-    prompt: str = "You are a helpful assistant."
-    history: List[Dict[str, Any]] = []
-    temperature: float = 0.7
-    max_tokens: int = 512
-    top_p: float = 1.0
-    stream: bool = False
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class ChatCompletionResponse(BaseModel):
-    response: str
-    job_id: str
+# ---------------
+# Authentication
+# ---------------
+
+
+class Body_login_v1_auth_token_post(BaseModel):
+    username: str
+    password: str
+    expires_in: int = 30
+
+
+class GetTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
 
 
 class ApiKeyEntry(BaseModel):
@@ -27,90 +27,19 @@ class ApiKeyEntry(BaseModel):
     expires_at: Optional[datetime] = None
 
 
-class CreateApiKeyResponse(BaseModel):
-    api_key: str
-    api_key_id: str
-    expires_at: str | None
-
-
-class BaseModelCard(BaseModel):
-    id: str
-    capabilities: "ModelCapabilities"
-    object: Optional[str] = Field(default="model")
-    created: Optional[int] = None
-    owned_by: Optional[str] = Field(default="mistralai")
-    name: Optional[str] = Field(default="~?~unset~?~sentinel~?~")
-    description: Optional[str] = Field(default="~?~unset~?~sentinel~?~")
-    max_context_length: Optional[int] = Field(default=32768)
-    aliases: Optional[List[str]] = Field(default_factory=list)
-    deprecation: Optional[datetime] = Field(default="~?~unset~?~sentinel~?~")
-    default_model_temperature: Optional[float] = Field(default="~?~unset~?~sentinel~?~")
-    type: Optional[str] = Field(default="base")
-
-
-class FTModelCard(BaseModel):
-    id: str
-    capabilities: "ModelCapabilities"
-    job: str
-    root: str
-    object: Optional[str] = Field(default="model")
-    created: Optional[int] = None
-    owned_by: Optional[str] = Field(default="mistralai")
-    name: Optional[str] = Field(default="~?~unset~?~sentinel~?~")
-    description: Optional[str] = Field(default="~?~unset~?~sentinel~?~")
-    max_context_length: Optional[int] = Field(default=32768)
-    aliases: Optional[List[str]] = Field(default_factory=list)
-    deprecation: Optional[datetime] = Field(default="~?~unset~?~sentinel~?~")
-    default_model_temperature: Optional[float] = Field(default="~?~unset~?~sentinel~?~")
-    type: Optional[str] = Field(default="fine-tuned")
-    archived: Optional[bool] = Field(default=False)
-
-
-class ModelCapabilities(BaseModel):
-    completion_chat: Optional[bool] = Field(default=True)
-    completion_fim: Optional[bool] = Field(default=False)
-    function_calling: Optional[bool] = Field(default=True)
-    fine_tuning: Optional[bool] = Field(default=False)
-    vision: Optional[bool] = Field(default=False)
-
-
-class Body_login_v1_auth_token_post(BaseModel):
-    username: str
-    password: str
-    expires_in: int = 30
-
-
 class GetApiKeyRequestBody(BaseModel):
     expires_in: Optional[int] = None
 
 
 class GetApiKeyResponse(BaseModel):
     api_key: str
-    expires_at: Optional[str] = None
+    api_key_id: str
+    expires_at: Optional[str]
 
 
-class GetModelResponse(BaseModel):
-    model: Union[BaseModelCard, FTModelCard]
-
-
-class GetTokenResponse(BaseModel):
-    access_token: str
-    token_type: str
-
-
-class HTTPValidationError(BaseModel):
-    detail: List[Dict[str, Any]]
-
-
-class RegisterRequestBody(BaseModel):
-    username: str
-    email: str
-    password: str
-
-
-class RegisterResponse(BaseModel):
+class DeleteApiKeyResponse(BaseModel):
     msg: str
-    user: Dict[str, Any]
+    success: bool
 
 
 class VerifyResponse(BaseModel):
@@ -118,47 +47,174 @@ class VerifyResponse(BaseModel):
     user: Dict[str, Any]
 
 
-class EmbeddingsRequest(BaseModel):
-    chunks: List[str]
+class HTTPValidationError(BaseModel):
+    detail: List[Dict[str, Any]]
+
+
+# ---------------
+# Chat Completions
+# ---------------
+
+
+class ToolCallFunction(BaseModel):
+    name: str
+    arguments: str
+
+
+class ToolCall(BaseModel):
+    id: str
+    type: str
+    function: ToolCallFunction
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: Optional[str] = None
+    tool_calls: Optional[List[ToolCall]] = None
+    refusal: Optional[str] = None
+    annotations: List[Dict[str, Any]] = Field(default_factory=list)
+    reasoning_content: Optional[str] = None
+
+
+class Message(BaseModel):
+    role: str
+    content: str
+
+
+class TokenDetails(BaseModel):
+    cached_tokens: int = 0
+    audio_tokens: int = 0
+
+
+class CompletionTokenDetails(BaseModel):
+    reasoning_tokens: int = 0
+    audio_tokens: int = 0
+    accepted_prediction_tokens: int = 0
+    rejected_prediction_tokens: int = 0
+
+
+class ChatUsage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    prompt_tokens_details: TokenDetails = Field(
+        default_factory=lambda: TokenDetails(cached_tokens=0, audio_tokens=0)
+    )
+    completion_tokens_details: CompletionTokenDetails = Field(
+        default_factory=lambda: CompletionTokenDetails(
+            reasoning_tokens=0,
+            audio_tokens=0,
+            accepted_prediction_tokens=0,
+            rejected_prediction_tokens=0,
+        )
+    )
+
+
+class ChatCompletionChoice(BaseModel):
+    index: int
+    message: ChatMessage
+    logprobs: Optional[Dict[str, Any]] = None
+    finish_reason: Optional[str] = None
+
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
     model: str
-    encoding_format: str = "float"
+    choices: List[ChatCompletionChoice]
+    usage: ChatUsage
+    service_tier: str = "default"
+    system_fingerprint: Optional[str] = None
+
+
+class ChatCompletionsRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    model: str
+    messages: Optional[List[Message]] = None
+    prompt: Optional[str] = None
+    input: Optional[str] = None
+    history: Optional[List[Message]] = None
+    stream: bool = False
+    tools: Optional[List[Dict[str, Any]]] = None
+    tool_choice: Optional[Any] = None
+
+
+# ---------------
+# Embeddings
+# ---------------
+
+
+class EmbeddingData(BaseModel):
+    object: str = "embedding"
+    embedding: List[float]
+    index: int
+
+
+class EmbeddingsUsage(BaseModel):
+    prompt_tokens: int = 0
+    total_tokens: int = 0
 
 
 class EmbeddingsResponse(BaseModel):
-    embeddings: List["Embedding"]
-    job_id: str
+    id: str
+    object: str = "list"
+    model: str
+    data: List[EmbeddingData]
+    usage: EmbeddingsUsage
 
 
-class Embedding(BaseModel):
-    index: int
-    embedding: List[float]
-    payload: Dict[str, Any]
-    object: str
+class EmbeddingsRequest(BaseModel):
+    input: List[str]
+    model: str
 
 
-class RagEncodeRequest(BaseModel):
-    chunks: List[str]
-    model: str = "mistral-embed"
-    encoding_format: str = "float"
+# ---------------
+# Models
+# ---------------
 
 
-class RagEncodeResponse(BaseModel):
-    collection_name: str
-    success: bool
+class Model(BaseModel):
+    id: str
+    object: str = "model"
+    owned_by: Optional[str] = None
 
 
-class RagRetrieveRequest(BaseModel):
+class ListModelsResponse(BaseModel):
+    object: str = "list"
+    data: List[Model]
+
+
+# ---------------
+# Vector Stores
+# ---------------
+
+
+class VectorStore(BaseModel):
+    id: str
+    object: str = "vector_store"
+    name: str
+    created_at: int
+    usage_bytes: int = 0
+
+
+class CreateVectorStoreRequest(BaseModel):
+    name: str
+
+
+class CreateVectorStoreResponse(BaseModel):
+    id: str
+    object: str = "vector_store"
+    name: str
+    created_at: int
+    usage_bytes: int = 0
+
+
+class ListVectorStoresResponse(BaseModel):
+    data: List[VectorStore]
+
+
+class VectorStoreSearchRequest(BaseModel):
     query: str
-    model: str = "mistral-embed"
+    model: str
     limit: int = 5
-
-
-class RagRetrieveResponse(BaseModel):
-    collection_name: str
-    results: List["RetrieveResult"]
-    success: bool
-
-
-class RetrieveResult(BaseModel):
-    score: float
-    payload: Dict[str, Any]
