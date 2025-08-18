@@ -1,0 +1,16 @@
+# Exclude environment files
+global-exclude *.env
+global-exclude .env
+
+# Exclude temporary directory
+global-exclude tmp/
+global-exclude tmp/*
+
+# Exclude other common files that shouldn't be in the package
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.log

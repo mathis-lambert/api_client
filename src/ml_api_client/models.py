@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional
 from openai.types.chat import ChatCompletionMessageParam
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------
@@ -124,7 +124,15 @@ class VectorStore(BaseModel):
 
 
 class CreateVectorStoreRequest(BaseModel):
-    name: str
+    name: str = Field(..., description="Vector store name (Qdrant collection)")
+    embedding_model: str = Field(
+        ...,
+        description="Embedding model to use: text-embedding-3-small, text-embedding-3-large",
+    )
+    distance: Optional[str] = Field(
+        "Cosine",
+        description="Distance function to use: Cosine, Euclidean",
+    )
 
 
 class CreateVectorStoreResponse(BaseModel):
@@ -141,5 +149,22 @@ class ListVectorStoresResponse(BaseModel):
 
 class VectorStoreSearchRequest(BaseModel):
     query: str
-    model: str
     limit: int = 5
+
+
+class UpdateVectorStoreRequest(BaseModel):
+    chunks: List[str] = Field(..., description="List of text chunks to encode")
+    metadata: Optional[List[Dict]] = Field(
+        [], description="List of corresponding metadata"
+    )
+
+
+class UpdateVectorStoreResponse(BaseModel):
+    success: bool
+    message: str
+    chunks_added: int
+
+
+class DeleteVectorStoreResponse(BaseModel):
+    success: bool
+    message: str

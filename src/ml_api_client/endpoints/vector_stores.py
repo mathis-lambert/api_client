@@ -1,7 +1,10 @@
 from ..models import (
     CreateVectorStoreRequest,
     CreateVectorStoreResponse,
+    DeleteVectorStoreResponse,
     ListVectorStoresResponse,
+    UpdateVectorStoreRequest,
+    UpdateVectorStoreResponse,
     VectorStore,
     VectorStoreSearchRequest,
 )
@@ -31,6 +34,18 @@ class VectorStoresEndpoint:
     ) -> dict:
         url = f"{self.client.base_url}/vector_stores/{vector_store_id}/search"
         return await self.client._request("POST", url, json=request.model_dump())
+
+    async def update_vector_store(
+        self, vector_store_id: str, request: UpdateVectorStoreRequest
+    ) -> UpdateVectorStoreResponse | dict:
+        url = f"{self.client.base_url}/vector_stores/{vector_store_id}"
+        return await self.client._request("PUT", url, json=request.model_dump())
+
+    async def delete_vector_store(
+        self, vector_store_id: str
+    ) -> DeleteVectorStoreResponse | dict:
+        url = f"{self.client.base_url}/vector_stores/{vector_store_id}"
+        return await self.client._request("DELETE", url)
 
     # Backward-compat aliases
     async def list_collections(self):

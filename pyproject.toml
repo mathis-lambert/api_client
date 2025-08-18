@@ -1,6 +1,6 @@
 [project]
 name = "ml_api_client"
-version = "0.2.0"
+version = "0.2.1"
 description = "A Python client for interacting with Mathis LAMBERT's API"
 requires-python = ">=3.13"
 authors = [
@@ -61,6 +61,14 @@ package-dir = {"" = "src"}
 where = ["src"]
 include = ["ml_api_client*"]
 exclude = ["tests*"]
+
+[tool.setuptools.exclude-package-data]
+"*" = [
+    "*.env",
+    "tmp/*",
+    ".env",
+    "tmp/"
+]
 
 [tool.setuptools.package-data]
 ml_api_client = ["py.typed"]
