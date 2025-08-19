@@ -12,7 +12,7 @@ from .endpoints import (
     ModelsEndpoint,
     VectorStoresEndpoint,
 )
-from ml_api_client.modules.tools import ChatToolRegistry
+from ml_api_client.modules.tools import ToolRegistry
 
 # Configure logging once with all settings
 logging.basicConfig(
@@ -49,7 +49,7 @@ class APIClient:
 
         # Initialisation des endpoints
         self.auth = AuthEndpoint(self)
-        self.tools = ChatToolRegistry()
+        self.tools = ToolRegistry()
         self.chat = ChatEndpoint(self)
         self.models = ModelsEndpoint(self)
         self.vector_stores = VectorStoresEndpoint(self)
