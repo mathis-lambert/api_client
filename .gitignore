@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 tmp/
 
+.ruff_cache/
+
 .DS_Store
 
 # C extensions
